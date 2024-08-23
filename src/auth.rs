@@ -1,10 +1,17 @@
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use chrono::{DateTime, Utc};
+use cuid::cuid2;
 use dotenv::dotenv;
 use reqwest::Client;
-use rusqlite::{params, Connection, Error, OptionalExtension, Result};
+
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter};
 use serde::Deserialize;
 use serde_json::Value;
 use std::env;
+
+use crate::user_sessions::Model as User_Sessions;
+use crate::users::Model as Users;
+use crate::{entities::users, user_sessions};
 
 #[derive(Deserialize)]
 pub struct GithubTokenResponse {
@@ -24,58 +31,38 @@ pub async fn github_authorize() -> String {
     auth_url
 }
 
-pub fn find_user_by_id(user_id: &str) -> Option<User> {
-    let conn = Connection::open("intercomm.db").expect("Failed to create or open database");
-    let mut stmt = conn.prepare(
-        "SELECT id, name,  username, avatar_url, email, createdAt FROM users WHERE username = ?1",
-    ).expect("Failed to read database");
+pub async fn find_user_by_id(user_id: &str, conn: &DatabaseConnection) -> Option<Users> {
+    let find_users = users::Entity::find()
+        .filter(users::Column::UserName.eq(user_id))
+        .one(conn)
+        .await
+        .unwrap();
 
-    let user = stmt
-        .query_row(params![user_id], |row| {
-            Ok(User {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                username: row.get(2)?,
-                avatar_url: row.get(3)?,
-                email: row.get(4)?,
-                createdAt: row.get(5)?,
-            })
-        })
-        .optional();
-
-    user.unwrap()
+    find_users
 }
 
-#[derive(Debug)]
-pub struct User {
-    pub id: String,
-    pub username: String,
-    pub email: String,
-    pub avatar_url: String,
-    pub name: String,
-    pub createdAt: i32,
-}
+pub async fn create_user(data: Value, conn: &DatabaseConnection) -> Result<Users, DbErr> {
+    let insert_user = users::ActiveModel {
+        id: sea_orm::ActiveValue::Set(cuid::cuid2_slug()),
+        user_name: sea_orm::ActiveValue::Set(Some(data["login"].as_str().unwrap().to_owned())),
+        email: sea_orm::ActiveValue::Set(Some(data["email"].as_str().unwrap().to_owned())),
+        name: sea_orm::ActiveValue::Set(Some(data["name"].as_str().unwrap().to_owned())),
+        avatar_url: sea_orm::ActiveValue::Set(Some(
+            data["avatar_url"].as_str().unwrap().to_owned(),
+        )),
+        ..Default::default()
+    };
 
-pub async fn create_user(data: Value) -> Result<usize, rusqlite::Error> {
-    let conn = Connection::open("intercomm.db").expect("Error connecting to database");
-
-    let user_id = cuid::cuid2_slug();
-    let user_name = data["login"].as_str().unwrap();
-    let email = data["email"].as_str().unwrap();
-    let name = data["name"].as_str().unwrap();
-    let avatar_url = data["avatar_url"].as_str().unwrap();
-
-    let result = conn.execute(
-        "INSERT INTO USERS (id, username, email, name, avatar_url) VALUES(?1, ?2, ?3, ?4, ?5)",
-        (user_id, user_name, email, name, avatar_url),
-    );
+    let result = insert_user.insert(conn).await;
 
     result
 }
 
-pub async fn create_session(user: User) -> Result<(String, usize), Error> {
+pub async fn create_session(
+    user: Users,
+    conn: &DatabaseConnection,
+) -> Result<(User_Sessions, usize), DbErr> {
     let id = cuid::cuid2_slug();
-    let conn = Connection::open("intercomm.db").expect("Failed to create or open database");
 
     let (jwt, exp) = create_jwt(&user.id);
 
@@ -87,23 +74,28 @@ pub async fn create_session(user: User) -> Result<(String, usize), Error> {
         Err(err) => println!("Failed to decode JWT: {}", err),
     }
 
-    let result = conn.execute(
-        "INSERT INTO USER_SESSIONS (id, user_id, device_id, jwt, jwt_life) VALUES(?1, ?2, ?3, ?4, ?5)",
-        (id, user.id,"device".to_owned() ,&jwt, exp),
-    );
-    match result {
-        Ok(_) => Ok((jwt, exp)), // Return the JWT if the insertion was successful
-        Err(e) => Err(e),        // Propagate the error if something went wrong
-    }
+    let insert_session = user_sessions::ActiveModel {
+        id: sea_orm::ActiveValue::Set(id),
+        user_id: sea_orm::ActiveValue::Set(user.id),
+        jwt: sea_orm::ActiveValue::Set(jwt),
+        jwt_life: sea_orm::ActiveValue::Set(exp.to_string()),
+        device_id: sea_orm::ActiveValue::Set("windows".to_owned()),
+        ..Default::default()
+    };
+
+    let result = insert_session.insert(conn).await;
+
+    Ok((result.unwrap(), exp))
 }
 
 use jsonwebtoken::{
     decode, encode, errors::Result as JwtResult, DecodingKey, EncodingKey, Header, Validation,
 };
 use serde::Serialize;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    sub: String,
+    pub sub: String,
     exp: usize, // Expiration time as a UNIX timestamp
 }
 
@@ -125,4 +117,35 @@ pub fn decode_jwt(token: &str) -> JwtResult<Claims> {
     let jwt_secret = env::var("AUTH_SECRET").expect("AUTH_SECRET not set");
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
     decode::<Claims>(token, &decoding_key, &Validation::default()).map(|data| data.claims)
+}
+
+pub fn is_token_expired(expiration_time: usize) -> bool {
+    let current_time = Utc::now().timestamp();
+    expiration_time as i64 > current_time
+}
+
+pub async fn authorize_user(token: &str, conn: &DatabaseConnection) -> bool {
+    let claims: Claims = decode_jwt(token).unwrap();
+
+    if is_token_expired(claims.exp) {
+        println!("Token is still valid.");
+    } else {
+        println!("Token is expired");
+        return false;
+    }
+
+    let user_id = claims.sub;
+
+    let find_user = user_sessions::Entity::find()
+        .filter(user_sessions::Column::UserId.eq(user_id))
+        .one(conn)
+        .await;
+
+    match find_user {
+        Ok(i) => match i {
+            Some(i) => is_token_expired(i.jwt_life.parse().unwrap_or(0)),
+            None => false,
+        },
+        Err(_) => false,
+    }
 }
