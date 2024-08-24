@@ -28,3 +28,4 @@ sea-orm = { version = "1.0.0", features = [
     "runtime-tokio-native-tls",
     "macros",
 ] }
+actix-cors = "0.6"

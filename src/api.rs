@@ -1,12 +1,14 @@
 use crate::auth::{self, GithubTokenResponse};
 use crate::{chat, AppState};
+use actix_web::http::header;
+use actix_web::post;
 use actix_web::web::Data;
 use actix_web::{
     cookie::{time::OffsetDateTime, Cookie},
     get, web, HttpRequest, HttpResponse, Responder,
 };
+use dotenv::dotenv;
 use reqwest::Client;
-
 use serde::Deserialize;
 use serde_json::Value;
 use std::env;
@@ -17,11 +19,22 @@ struct User {
     email: String,
     name: String,
 }
-
 #[get("/authuser")]
 async fn auth_user() -> impl Responder {
-    let res = auth::github_authorize().await;
-    HttpResponse::Ok().body(format!("Push Auth {}", res))
+    dotenv().ok();
+    let client_id = env::var("GITHUB_CLIENT_ID").expect("GITHUB_CLIENT_ID not set");
+
+    let auth_url = format!(
+        "https://github.com/login/oauth/authorize?client_id={}",
+        client_id
+    );
+
+    println!("Auth request");
+    // Replace with your desired URL
+
+    HttpResponse::Found()
+        .insert_header((header::LOCATION, auth_url))
+        .finish()
 }
 
 #[get("/authusercallback")]
@@ -80,15 +93,16 @@ async fn github_callback(
             match auth::create_session(user, conn).await {
                 Ok((token, exp)) => {
                     let expires_at = OffsetDateTime::from_unix_timestamp(exp as i64).unwrap();
-                    let cookie = Cookie::build("auth_token", token.jwt)
-                        .path("/") // Set the path where the cookie is valid (optional)
-                        .http_only(true)
-                        .expires(expires_at) // Make the cookie HTTP-only (not accessible via JavaScript)
-                        .finish();
 
-                    HttpResponse::Ok()
-                        .cookie(cookie)
-                        .body("Session created successfully")
+                    HttpResponse::Found()
+                        .insert_header((
+                            "Location",
+                            format!(
+                                "http://localhost:3000/callback?token={}&expires={}",
+                                token.jwt, token.jwt_life
+                            ),
+                        ))
+                        .finish()
                 }
                 Err(err) => HttpResponse::InternalServerError()
                     .body(format!("Unable to create session: {}", err)),
@@ -110,6 +124,13 @@ async fn github_callback(
             }
         }
     }
+}
+
+#[derive(serde::Deserialize)]
+struct AuthUserRequest {
+    name: String,
+    avatar_url: String,
+    email: String,
 }
 
 #[get("/getchatmessages")]

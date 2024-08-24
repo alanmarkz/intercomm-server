@@ -19,18 +19,6 @@ pub struct GithubTokenResponse {
     pub token_type: String,
 }
 
-pub async fn github_authorize() -> String {
-    dotenv().ok();
-    let client_id = env::var("GITHUB_CLIENT_ID").expect("GITHUB_CLIENT_ID not set");
-
-    let auth_url = format!(
-        "https://github.com/login/oauth/authorize?client_id={}",
-        client_id
-    );
-
-    auth_url
-}
-
 pub async fn find_user_by_id(user_id: &str, conn: &DatabaseConnection) -> Option<Users> {
     let find_users = users::Entity::find()
         .filter(users::Column::UserName.eq(user_id))
