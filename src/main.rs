@@ -3,7 +3,7 @@ mod chat;
 use actix_cors::Cors;
 mod db_sea;
 use actix_web::{http, main, middleware, web, App, HttpServer};
-use api::{delete_messages, edit_message, github_callback};
+use api::{delete_messages, edit_message, github_callback, validate_token};
 use sea_orm::*;
 mod auth;
 use migration::{Migrator, MigratorTrait};
@@ -50,6 +50,7 @@ fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(edit_message);
     cfg.service(api::get_user);
     cfg.service(api::github_callback);
+    cfg.service(api::validate_token);
 }
 
 #[derive(Debug, Clone)]

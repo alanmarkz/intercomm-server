@@ -2,11 +2,8 @@ use crate::auth::{self, GithubTokenResponse};
 use crate::{chat, AppState};
 use actix_web::http::header;
 use actix_web::post;
-use actix_web::web::Data;
-use actix_web::{
-    cookie::{time::OffsetDateTime, Cookie},
-    get, web, HttpRequest, HttpResponse, Responder,
-};
+
+use actix_web::{cookie::time::OffsetDateTime, get, web, HttpRequest, HttpResponse, Responder};
 use dotenv::dotenv;
 use reqwest::Client;
 use serde::Deserialize;
@@ -137,13 +134,16 @@ struct AuthUserRequest {
 async fn get_chat_messages(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
     let conn = &data.conn;
     // Extract the cookie named "auth_token"
-    if let Some(auth_cookie) = req.cookie("auth_token") {
+
+    if let Some(auth_cookie) = req.cookie("authToken") {
         let token = auth_cookie.value();
 
+        println!("{token},token in server");
         // Here you would typically validate the token (e.g., checking expiration, signature, etc.)
         // For demonstration, we'll assume the token is valid if it exists
         if auth::authorize_user(token, conn).await {
             let result = chat::get_user_chats(token, conn).await;
+            println!("token is valiue {}", result);
             return HttpResponse::Ok().body(format!("{}", result));
         } else {
             return HttpResponse::Unauthorized().body("Invalid token");
@@ -172,4 +172,23 @@ async fn edit_message() -> impl Responder {
 #[get("/getusers")]
 async fn get_user() -> impl Responder {
     HttpResponse::Ok().body("Authenticated")
+}
+
+#[post("/validatetoken")]
+async fn validate_token(body: web::Json<TokenData>, data: web::Data<AppState>) -> impl Responder {
+    // Extract the token from the query parameters
+
+    let auth_token = &body.authToken;
+
+    let conn = &data.conn;
+    if auth::validate_token_logic(auth_token, conn).await {
+        return HttpResponse::Ok().json("Token is valid");
+    } else {
+        return HttpResponse::Unauthorized().json("Invalid token");
+    }
+}
+
+#[derive(Deserialize)]
+struct TokenData {
+    authToken: String,
 }

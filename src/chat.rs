@@ -16,6 +16,7 @@ pub async fn get_user_chats(token: &str, conn: &DatabaseConnection) -> String {
         eprintln!("Error fetching user chats: {}", e);
         Vec::new()
     });
+
     let user_json = serde_json::to_string(&user_chats);
     user_json.unwrap()
 }

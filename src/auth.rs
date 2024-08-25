@@ -90,7 +90,7 @@ pub struct Claims {
 // Change this to a secure secret
 
 pub fn create_jwt(sub: &str) -> (String, usize) {
-    let jwt_secret = env::var("AUTH_SECRET").expect("AUTH_SECRET not set");
+    let jwt_secret = "36dd2a014fab92e8a37f77ce98c740b".to_owned();
     let claims = Claims {
         sub: sub.to_owned(),
         exp: (chrono::Utc::now() + chrono::Duration::days(1)).timestamp() as usize,
@@ -102,36 +102,44 @@ pub fn create_jwt(sub: &str) -> (String, usize) {
 }
 
 pub fn decode_jwt(token: &str) -> JwtResult<Claims> {
-    let jwt_secret = env::var("AUTH_SECRET").expect("AUTH_SECRET not set");
+    let jwt_secret = "36dd2a014fab92e8a37f77ce98c740b".to_owned();
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
     decode::<Claims>(token, &decoding_key, &Validation::default()).map(|data| data.claims)
 }
 
 pub fn is_token_expired(expiration_time: usize) -> bool {
+    println!("{expiration_time}");
     let current_time = Utc::now().timestamp();
     expiration_time as i64 > current_time
 }
 
 pub async fn authorize_user(token: &str, conn: &DatabaseConnection) -> bool {
-    let claims: Claims = decode_jwt(token).unwrap();
-
-    if is_token_expired(claims.exp) {
-        println!("Token is still valid.");
-    } else {
-        println!("Token is expired");
-        return false;
-    }
-
-    let user_id = claims.sub;
-
-    let find_user = user_sessions::Entity::find()
-        .filter(user_sessions::Column::UserId.eq(user_id))
+    let find_user_session = user_sessions::Entity::find()
+        .filter(user_sessions::Column::Jwt.eq(token))
         .one(conn)
         .await;
 
-    match find_user {
+    match find_user_session {
         Ok(i) => match i {
-            Some(i) => is_token_expired(i.jwt_life.parse().unwrap_or(0)),
+            Some(i) => {
+                println!("{:?} ses", i);
+                is_token_expired(i.jwt_life.parse().unwrap_or(0))
+            }
+            None => false,
+        },
+        Err(_) => false,
+    }
+}
+
+pub async fn validate_token_logic(auth_token: &str, conn: &DatabaseConnection) -> bool {
+    let rows = user_sessions::Entity::find()
+        .filter(user_sessions::Column::Jwt.eq(auth_token))
+        .one(conn)
+        .await;
+
+    match rows {
+        Ok(val) => match val {
+            Some(_) => true,
             None => false,
         },
         Err(_) => false,
