@@ -50,7 +50,6 @@ pub struct Chats {
 
 pub async fn post_chats(token: &str, conn: &DatabaseConnection) -> String {
     let user_id = decode_jwt(token).unwrap().sub;
-    let user_id = decode_jwt(token).unwrap().sub;
 
     println!("{}", user_id);
     let result = Chats::find_by_statement(Statement::from_sql_and_values(

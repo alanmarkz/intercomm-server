@@ -90,7 +90,8 @@ pub struct Claims {
 // Change this to a secure secret
 
 pub fn create_jwt(sub: &str) -> (String, usize) {
-    let jwt_secret = "36dd2a014fab92e8a37f77ce98c740b".to_owned();
+    dotenv().ok();
+    let jwt_secret = env::var("GITHUB_CLIENT_SECRET").expect("GITHUB_CLIENT_SECRET not set");
     let claims = Claims {
         sub: sub.to_owned(),
         exp: (chrono::Utc::now() + chrono::Duration::days(1)).timestamp() as usize,

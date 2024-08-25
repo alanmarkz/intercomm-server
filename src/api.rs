@@ -43,7 +43,7 @@ async fn github_callback(
         Some(code) => code,
         None => return HttpResponse::BadRequest().body("Missing code parameter"),
     };
-
+    dotenv().ok();
     let conn = &data.conn;
     let client_id = env::var("GITHUB_CLIENT_ID").expect("GITHUB_CLIENT_ID not set");
     let client_secret = env::var("GITHUB_CLIENT_SECRET").expect("GITHUB_CLIENT_SECRET not set");

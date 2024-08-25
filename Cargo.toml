@@ -12,6 +12,7 @@ migration = { path = "migration" }
 
 cuid = "1.3.3"
 actix-web = "4"
+actix-web-actors = "4.0"
 serde = { version = "1.0.208", features = ["derive"] }
 oxide-auth-actix = "0.3.0"
 reqwest = { version = "0.11", features = ["json"] }
@@ -29,3 +30,5 @@ sea-orm = { version = "1.0.0", features = [
     "macros",
 ] }
 actix-cors = "0.6"
+actix-ws = "0.3.0"
+futures-util = "0.3.30"
