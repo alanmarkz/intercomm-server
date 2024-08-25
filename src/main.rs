@@ -3,13 +3,13 @@ mod chat;
 use actix_cors::Cors;
 mod db_sea;
 use actix_web::{http, main, middleware, web, App, HttpServer};
-use api::{delete_messages, edit_message, github_callback, validate_token};
+use api::{delete_messages, edit_message};
 use sea_orm::*;
 mod auth;
 use migration::{Migrator, MigratorTrait};
 mod entities;
-use entities::prelude;
-use entities::{prelude::*, *};
+
+use entities::*;
 
 #[main]
 async fn main() -> std::io::Result<()> {
@@ -51,6 +51,7 @@ fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(api::get_user);
     cfg.service(api::github_callback);
     cfg.service(api::validate_token);
+    cfg.service(api::get_chats);
 }
 
 #[derive(Debug, Clone)]

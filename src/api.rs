@@ -88,19 +88,15 @@ async fn github_callback(
         Some(user) => {
             println!("authenticating users :{:?}", user.user_name);
             match auth::create_session(user, conn).await {
-                Ok((token, exp)) => {
-                    let expires_at = OffsetDateTime::from_unix_timestamp(exp as i64).unwrap();
-
-                    HttpResponse::Found()
-                        .insert_header((
-                            "Location",
-                            format!(
-                                "http://localhost:3000/callback?token={}&expires={}",
-                                token.jwt, token.jwt_life
-                            ),
-                        ))
-                        .finish()
-                }
+                Ok(token) => HttpResponse::Found()
+                    .insert_header((
+                        "Location",
+                        format!(
+                            "http://localhost:3000/callback?token={}&expires={}",
+                            token.jwt, token.jwt_life
+                        ),
+                    ))
+                    .finish(),
                 Err(err) => HttpResponse::InternalServerError()
                     .body(format!("Unable to create session: {}", err)),
             }
@@ -154,6 +150,58 @@ async fn get_chat_messages(req: HttpRequest, data: web::Data<AppState>) -> impl 
     HttpResponse::Unauthorized().body("No auth token found")
 }
 
+#[get("/getchats")]
+async fn get_chats(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
+    let conn = &data.conn;
+    // Extract the cookie named "auth_token"
+
+    if let Some(auth_cookie) = req.cookie("authToken") {
+        let token = auth_cookie.value();
+
+        println!("{token},token in server");
+        // Here you would typically validate the token (e.g., checking expiration, signature, etc.)
+        // For demonstration, we'll assume the token is valid if it exists
+        if auth::authorize_user(token, conn).await {
+            let result = chat::get_user_chats(token, conn).await;
+            println!("token is valiue {}", result);
+            return HttpResponse::Ok().body(format!("{}", result));
+        } else {
+            return HttpResponse::Unauthorized().body("Invalid token");
+        }
+    }
+
+    // If no "auth_token" cookie is found
+    HttpResponse::Unauthorized().body("No auth token found")
+}
+
+#[get("/postchats")]
+async fn post_chats(
+    req: HttpRequest,
+    body: web::Json<PostData>,
+    data: web::Data<AppState>,
+) -> impl Responder {
+    let conn = &data.conn;
+    // Extract the cookie named "auth_token"
+
+    if let Some(auth_cookie) = req.cookie("authToken") {
+        let token = auth_cookie.value();
+
+        println!("{token},token in server");
+        // Here you would typically validate the token (e.g., checking expiration, signature, etc.)
+        // For demonstration, we'll assume the token is valid if it exists
+        if auth::authorize_user(token, conn).await {
+            let result = chat::post_chats(token, conn).await;
+            println!("token is valiue {}", result);
+            return HttpResponse::Ok().body(format!("{}", result));
+        } else {
+            return HttpResponse::Unauthorized().body("Invalid token");
+        }
+    }
+
+    // If no "auth_token" cookie is found
+    HttpResponse::Unauthorized().body("No auth token found")
+}
+
 #[get("/queryuserdata")]
 async fn query_user_data() -> impl Responder {
     HttpResponse::Ok().body("Authenticated")
@@ -174,6 +222,20 @@ async fn get_user() -> impl Responder {
     HttpResponse::Ok().body("Authenticated")
 }
 
+#[post("/post_messages")]
+async fn post_messages(body: web::Json<TokenData>, data: web::Data<AppState>) -> impl Responder {
+    // Extract the token from the query parameters
+
+    let auth_token = &body.authToken;
+
+    let conn = &data.conn;
+    if auth::validate_token_logic(auth_token, conn).await {
+        return HttpResponse::Ok().json("Token is valid");
+    } else {
+        return HttpResponse::Unauthorized().json("Invalid token");
+    }
+}
+
 #[post("/validatetoken")]
 async fn validate_token(body: web::Json<TokenData>, data: web::Data<AppState>) -> impl Responder {
     // Extract the token from the query parameters
@@ -191,4 +253,11 @@ async fn validate_token(body: web::Json<TokenData>, data: web::Data<AppState>) -
 #[derive(Deserialize)]
 struct TokenData {
     authToken: String,
+}
+
+#[derive(Deserialize)]
+struct PostData {
+    chat_id: String,
+    friend_id: String,
+    message_id: String,
 }

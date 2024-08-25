@@ -49,7 +49,7 @@ pub async fn create_user(data: Value, conn: &DatabaseConnection) -> Result<Users
 pub async fn create_session(
     user: Users,
     conn: &DatabaseConnection,
-) -> Result<(User_Sessions, usize), DbErr> {
+) -> Result<User_Sessions, DbErr> {
     let id = cuid::cuid2_slug();
 
     let (jwt, exp) = create_jwt(&user.id);
@@ -73,7 +73,7 @@ pub async fn create_session(
 
     let result = insert_session.insert(conn).await;
 
-    Ok((result.unwrap(), exp))
+    Ok(result.unwrap())
 }
 
 use jsonwebtoken::{
