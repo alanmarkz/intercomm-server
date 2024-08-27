@@ -1,10 +1,14 @@
 use crate::auth::{self, GithubTokenResponse};
+use crate::chat::send_chats;
 use crate::{chat, AppState};
 use actix_web::http::header;
-use actix_web::post;
+use actix_web::{post, rt, Error};
 
-use actix_web::{cookie::time::OffsetDateTime, get, web, HttpRequest, HttpResponse, Responder};
+use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
+use actix_ws::AggregatedMessage;
+use core::str;
 use dotenv::dotenv;
+use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -134,12 +138,11 @@ async fn get_chat_messages(req: HttpRequest, data: web::Data<AppState>) -> impl 
     if let Some(auth_cookie) = req.cookie("authToken") {
         let token = auth_cookie.value();
 
-        println!("{token},token in server");
         // Here you would typically validate the token (e.g., checking expiration, signature, etc.)
         // For demonstration, we'll assume the token is valid if it exists
         if auth::authorize_user(token, conn).await {
             let result = chat::get_user_chats(token, conn).await;
-            println!("token is valiue {}", result);
+
             return HttpResponse::Ok().body(format!("{}", result));
         } else {
             return HttpResponse::Unauthorized().body("Invalid token");
@@ -158,12 +161,11 @@ async fn get_chats(req: HttpRequest, data: web::Data<AppState>) -> impl Responde
     if let Some(auth_cookie) = req.cookie("authToken") {
         let token = auth_cookie.value();
 
-        println!("{token},token in server");
         // Here you would typically validate the token (e.g., checking expiration, signature, etc.)
         // For demonstration, we'll assume the token is valid if it exists
         if auth::authorize_user(token, conn).await {
             let result = chat::get_user_chats(token, conn).await;
-            println!("token is valiue {}", result);
+
             return HttpResponse::Ok().body(format!("{}", result));
         } else {
             return HttpResponse::Unauthorized().body("Invalid token");
@@ -186,12 +188,11 @@ async fn post_chats(
     if let Some(auth_cookie) = req.cookie("authToken") {
         let token = auth_cookie.value();
 
-        println!("{token},token in server");
         // Here you would typically validate the token (e.g., checking expiration, signature, etc.)
         // For demonstration, we'll assume the token is valid if it exists
         if auth::authorize_user(token, conn).await {
             let result = chat::post_chats(token, conn).await;
-            println!("token is valiue {}", result);
+
             return HttpResponse::Ok().body(format!("{}", result));
         } else {
             return HttpResponse::Unauthorized().body("Invalid token");
@@ -248,6 +249,52 @@ async fn validate_token(body: web::Json<TokenData>, data: web::Data<AppState>) -
     } else {
         return HttpResponse::Unauthorized().json("Invalid token");
     }
+}
+
+#[get("/chat/{chatid}")]
+pub async fn chat_socket(
+    req: HttpRequest,
+    stream: web::Payload,
+    data: web::Data<AppState>,
+) -> Result<HttpResponse, Error> {
+    let (res, mut session, stream) = actix_ws::handle(&req, stream)?;
+
+    if let Some(token) = req.cookie("authToken") {
+        let token = token.value();
+
+        println!("{token}")
+    }
+
+    let mut stream = stream
+        .aggregate_continuations()
+        // aggregate continuation frames up to 1MiB
+        .max_continuation_size(2_usize.pow(20));
+
+    // start task but don't wait for it
+    rt::spawn(async move {
+        // receive messages from websocket
+
+        while let Some(msg) = stream.next().await {
+            let conn = &data.conn;
+            match msg {
+                Ok(AggregatedMessage::Text(text)) => {
+                    if let Some(auth_cookie) = req.cookie("authToken") {
+                        let token = auth_cookie.value();
+                        println!("{token} stock");
+                        if auth::authorize_user(token, conn).await {
+                            send_chats(token, text.to_string(), conn).await;
+                            session.text(text).await.unwrap()
+                        }
+                    }
+                }
+
+                _ => {}
+            }
+        }
+    });
+
+    // respond immediately with response connected to WS session
+    Ok(res)
 }
 
 #[derive(Deserialize)]

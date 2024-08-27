@@ -1,5 +1,4 @@
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use cuid::cuid2;
 use dotenv::dotenv;
 use reqwest::Client;
@@ -91,7 +90,7 @@ pub struct Claims {
 
 pub fn create_jwt(sub: &str) -> (String, usize) {
     dotenv().ok();
-    let jwt_secret = env::var("GITHUB_CLIENT_SECRET").expect("GITHUB_CLIENT_SECRET not set");
+    let jwt_secret = env::var("AUTH_SECRET").expect("GITHUB_CLIENT_SECRET not set");
     let claims = Claims {
         sub: sub.to_owned(),
         exp: (chrono::Utc::now() + chrono::Duration::days(1)).timestamp() as usize,
@@ -104,6 +103,7 @@ pub fn create_jwt(sub: &str) -> (String, usize) {
 
 pub fn decode_jwt(token: &str) -> JwtResult<Claims> {
     let jwt_secret = "36dd2a014fab92e8a37f77ce98c740b".to_owned();
+
     let decoding_key = DecodingKey::from_secret(jwt_secret.as_ref());
     decode::<Claims>(token, &decoding_key, &Validation::default()).map(|data| data.claims)
 }
@@ -115,6 +115,7 @@ pub fn is_token_expired(expiration_time: usize) -> bool {
 }
 
 pub async fn authorize_user(token: &str, conn: &DatabaseConnection) -> bool {
+    println!("{token}, hekkio");
     let find_user_session = user_sessions::Entity::find()
         .filter(user_sessions::Column::Jwt.eq(token))
         .one(conn)
@@ -122,10 +123,7 @@ pub async fn authorize_user(token: &str, conn: &DatabaseConnection) -> bool {
 
     match find_user_session {
         Ok(i) => match i {
-            Some(i) => {
-                println!("{:?} ses", i);
-                is_token_expired(i.jwt_life.parse().unwrap_or(0))
-            }
+            Some(i) => is_token_expired(i.jwt_life.parse().unwrap_or(0)),
             None => false,
         },
         Err(_) => false,

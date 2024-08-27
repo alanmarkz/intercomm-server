@@ -7,11 +7,11 @@ use api::{delete_messages, edit_message};
 use sea_orm::*;
 mod auth;
 use migration::{Migrator, MigratorTrait};
-mod chat_service;
+
 mod entities;
 use entities::*;
 
-#[main(flavor = "current_thread")]
+#[main]
 async fn main() -> std::io::Result<()> {
     println!("Starting server...");
 
@@ -34,7 +34,6 @@ async fn main() -> std::io::Result<()> {
                     ])
                     .supports_credentials(), // You can restrict headers here
             )
-            .route("/chat/{chat_id}", web::get().to(chat_service::chat_socket))
             .configure(init)
     })
     .bind(("127.0.0.1", 8080))?
@@ -53,6 +52,7 @@ fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(api::github_callback);
     cfg.service(api::validate_token);
     cfg.service(api::get_chats);
+    cfg.service(api::chat_socket);
 }
 
 #[derive(Debug, Clone)]

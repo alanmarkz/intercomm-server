@@ -1,11 +1,12 @@
-use sea_orm::{
-    ColumnTrait, DatabaseBackend, DatabaseConnection, DbBackend, EntityTrait, FromQueryResult,
-    JoinType, QueryFilter, Statement,
-};
-use serde::{Deserialize, Serialize};
-
+use crate::messages;
 use crate::{auth::decode_jwt, chats, participants};
+
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseBackend, DatabaseConnection, DbBackend,
+    EntityTrait, FromQueryResult, JoinType, QueryFilter, QueryTrait, Statement,
+};
 use sea_orm::{DbConn, QuerySelect};
+use serde::{Deserialize, Serialize};
 
 pub async fn get_user_chats(token: &str, conn: &DatabaseConnection) -> String {
     let user_id = decode_jwt(token).unwrap().sub;
@@ -79,4 +80,25 @@ pub async fn post_chats(token: &str, conn: &DatabaseConnection) -> String {
 
     let user_json = serde_json::to_string(&user_chats);
     user_json.unwrap()
+}
+
+pub async fn send_chats(token: &str, messages: String, conn: &DatabaseConnection) -> String {
+    let user_id = decode_jwt(token).unwrap().sub;
+
+    let insertMessage = messages::ActiveModel {
+        id: ActiveValue::set(cuid::cuid2_slug()),
+        message: ActiveValue::set(messages),
+        chat_id: ActiveValue::set("he".to_owned()),
+        ..Default::default()
+    };
+
+    insertMessage.insert(conn).await;
+
+    println!("{}, iuse", user_id);
+
+    // let user_chats = result.unwrap_or_else(|e| {
+    //     eprintln!("Error fetching user chats: {}", e);
+    //     Vec::new()
+    // });
+    "print".to_owned()
 }
