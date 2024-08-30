@@ -1,6 +1,6 @@
 use crate::auth::{self, GithubTokenResponse};
-use crate::chat::send_chats;
-use crate::{chat, AppState};
+use crate::chat::{fetch_messages, send_chats};
+use crate::{chat, messages, AppState};
 use actix_web::http::header;
 use actix_web::{post, rt, Error};
 
@@ -130,8 +130,8 @@ struct AuthUserRequest {
     email: String,
 }
 
-#[get("/getchatmessages")]
-async fn get_chat_messages(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
+#[get("/get_users")]
+async fn get_users(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
     let conn = &data.conn;
     // Extract the cookie named "auth_token"
 
@@ -141,57 +141,7 @@ async fn get_chat_messages(req: HttpRequest, data: web::Data<AppState>) -> impl 
         // Here you would typically validate the token (e.g., checking expiration, signature, etc.)
         // For demonstration, we'll assume the token is valid if it exists
         if auth::authorize_user(token, conn).await {
-            let result = chat::get_user_chats(token, conn).await;
-
-            return HttpResponse::Ok().body(format!("{}", result));
-        } else {
-            return HttpResponse::Unauthorized().body("Invalid token");
-        }
-    }
-
-    // If no "auth_token" cookie is found
-    HttpResponse::Unauthorized().body("No auth token found")
-}
-
-#[get("/getchats")]
-async fn get_chats(req: HttpRequest, data: web::Data<AppState>) -> impl Responder {
-    let conn = &data.conn;
-    // Extract the cookie named "auth_token"
-
-    if let Some(auth_cookie) = req.cookie("authToken") {
-        let token = auth_cookie.value();
-
-        // Here you would typically validate the token (e.g., checking expiration, signature, etc.)
-        // For demonstration, we'll assume the token is valid if it exists
-        if auth::authorize_user(token, conn).await {
-            let result = chat::get_user_chats(token, conn).await;
-
-            return HttpResponse::Ok().body(format!("{}", result));
-        } else {
-            return HttpResponse::Unauthorized().body("Invalid token");
-        }
-    }
-
-    // If no "auth_token" cookie is found
-    HttpResponse::Unauthorized().body("No auth token found")
-}
-
-#[get("/postchats")]
-async fn post_chats(
-    req: HttpRequest,
-    body: web::Json<PostData>,
-    data: web::Data<AppState>,
-) -> impl Responder {
-    let conn = &data.conn;
-    // Extract the cookie named "auth_token"
-
-    if let Some(auth_cookie) = req.cookie("authToken") {
-        let token = auth_cookie.value();
-
-        // Here you would typically validate the token (e.g., checking expiration, signature, etc.)
-        // For demonstration, we'll assume the token is valid if it exists
-        if auth::authorize_user(token, conn).await {
-            let result = chat::post_chats(token, conn).await;
+            let result = chat::get_users(token, conn).await;
 
             return HttpResponse::Ok().body(format!("{}", result));
         } else {
@@ -218,24 +168,16 @@ async fn edit_message() -> impl Responder {
     HttpResponse::Ok().body("Authenticated")
 }
 
-#[get("/getusers")]
-async fn get_user() -> impl Responder {
-    HttpResponse::Ok().body("Authenticated")
-}
+// #[post("/post_messages")]
+// async fn post_messages(body: web::Json<TokenData>, data: web::Data<AppState>) -> impl Responder {
+//     // Extract the token from the query parameters
 
-#[post("/post_messages")]
-async fn post_messages(body: web::Json<TokenData>, data: web::Data<AppState>) -> impl Responder {
-    // Extract the token from the query parameters
-
-    let auth_token = &body.authToken;
-
-    let conn = &data.conn;
-    if auth::validate_token_logic(auth_token, conn).await {
-        return HttpResponse::Ok().json("Token is valid");
-    } else {
-        return HttpResponse::Unauthorized().json("Invalid token");
-    }
-}
+//     let conn = &data.conn;
+//     if auth::validate_token_logic(auth_token, conn).await {
+//         return HttpResponse::Ok().json("Token is valid");
+//     } else {
+//         return HttpResponse::Unauthorized().json("Invalid token");
+//     }
 
 #[post("/validatetoken")]
 async fn validate_token(body: web::Json<TokenData>, data: web::Data<AppState>) -> impl Responder {
@@ -251,7 +193,7 @@ async fn validate_token(body: web::Json<TokenData>, data: web::Data<AppState>) -
     }
 }
 
-#[get("/chat/{chatid}")]
+#[get("/chat_server/{h}")]
 pub async fn chat_socket(
     req: HttpRequest,
     stream: web::Payload,
@@ -259,31 +201,36 @@ pub async fn chat_socket(
 ) -> Result<HttpResponse, Error> {
     let (res, mut session, stream) = actix_ws::handle(&req, stream)?;
 
-    if let Some(token) = req.cookie("authToken") {
-        let token = token.value();
-
-        println!("{token}")
-    }
-
+    println!("connected...");
     let mut stream = stream
         .aggregate_continuations()
         // aggregate continuation frames up to 1MiB
         .max_continuation_size(2_usize.pow(20));
 
-    // start task but don't wait for it
+    let b = req.uri().to_owned().to_string();
+
     rt::spawn(async move {
         // receive messages from websocket
-
+        let mut a = 5; // start task but don't wait for it
+        loop {
+            session.text(b.as_str()).await.unwrap();
+            a = a - 1;
+            print!("{a}");
+            if a == 0 {
+                break;
+            }
+        }
         while let Some(msg) = stream.next().await {
             let conn = &data.conn;
             match msg {
                 Ok(AggregatedMessage::Text(text)) => {
                     if let Some(auth_cookie) = req.cookie("authToken") {
                         let token = auth_cookie.value();
-                        println!("{token} stock");
+
+                        let chat_data: ChatData = serde_json::from_str(&text).unwrap();
+
                         if auth::authorize_user(token, conn).await {
-                            send_chats(token, text.to_string(), conn).await;
-                            session.text(text).await.unwrap()
+                            send_chats(token, chat_data, conn).await;
                         }
                     }
                 }
@@ -297,9 +244,36 @@ pub async fn chat_socket(
     Ok(res)
 }
 
+#[post("/get_messages")]
+async fn get_messages(
+    req: HttpRequest,
+    body: web::Json<ReceipientData>,
+    data: web::Data<AppState>,
+) -> impl Responder {
+    if let Some(auth_cookie) = req.cookie("authToken") {
+        let conn = &data.conn;
+        let token = auth_cookie.value();
+        println!("{token} stock");
+        let receipient_id = &body.receipient_id;
+
+        if auth::authorize_user(token, conn).await {
+            let result = fetch_messages(token, &receipient_id, conn).await;
+            return HttpResponse::Ok().body(format!("{}", result));
+        } else {
+            return HttpResponse::Unauthorized().body("Invalid token");
+        }
+    }
+    return HttpResponse::Unauthorized().body("Invalid token");
+}
+
 #[derive(Deserialize)]
 struct TokenData {
     authToken: String,
+}
+
+#[derive(Deserialize)]
+struct ReceipientData {
+    receipient_id: String,
 }
 
 #[derive(Deserialize)]
@@ -307,4 +281,10 @@ struct PostData {
     chat_id: String,
     friend_id: String,
     message_id: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ChatData {
+    pub receiver_id: String,
+    pub message: String,
 }

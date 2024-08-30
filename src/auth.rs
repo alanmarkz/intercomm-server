@@ -115,7 +115,6 @@ pub fn is_token_expired(expiration_time: usize) -> bool {
 }
 
 pub async fn authorize_user(token: &str, conn: &DatabaseConnection) -> bool {
-    println!("{token}, hekkio");
     let find_user_session = user_sessions::Entity::find()
         .filter(user_sessions::Column::Jwt.eq(token))
         .one(conn)

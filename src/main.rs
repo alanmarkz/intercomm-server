@@ -1,12 +1,14 @@
 mod api;
 mod chat;
+use std::{collections::HashMap, sync::Arc};
+
 use actix_cors::Cors;
 mod db_sea;
 use actix_web::{http, main, middleware, web, App, HttpServer};
-use api::{delete_messages, edit_message};
+
 use sea_orm::*;
+
 mod auth;
-use migration::{Migrator, MigratorTrait};
 
 mod entities;
 use entities::*;
@@ -44,18 +46,19 @@ async fn main() -> std::io::Result<()> {
 
 fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(api::auth_user);
-    cfg.service(api::get_chat_messages);
     cfg.service(api::query_user_data);
-    cfg.service(delete_messages);
-    cfg.service(edit_message);
-    cfg.service(api::get_user);
+
     cfg.service(api::github_callback);
     cfg.service(api::validate_token);
-    cfg.service(api::get_chats);
     cfg.service(api::chat_socket);
+    cfg.service(api::get_users);
+    cfg.service(api::get_messages);
 }
 
-#[derive(Debug, Clone)]
+type WebSocketSession = actix_ws::Session;
+type SessionId = String;
+
+#[derive(Clone)]
 struct AppState {
     conn: DatabaseConnection,
 }
