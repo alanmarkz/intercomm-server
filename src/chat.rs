@@ -83,7 +83,7 @@ pub async fn post_chats(token: &str, conn: &DatabaseConnection) -> String {
     user_json.unwrap()
 }
 
-pub async fn send_chats(token: &str, messages: ChatData, conn: &DatabaseConnection) -> String {
+pub async fn send_chats(token: &str, messages: &ChatData, conn: &DatabaseConnection) -> String {
     let user_id = decode_jwt(token).unwrap().sub;
 
     let chat_id = cuid1_slug().unwrap();
@@ -97,7 +97,7 @@ pub async fn send_chats(token: &str, messages: ChatData, conn: &DatabaseConnecti
 
     let insertMessage = messages::ActiveModel {
         id: ActiveValue::set(cuid::cuid2_slug()),
-        message: ActiveValue::set(messages.message),
+        message: ActiveValue::set(messages.message.to_owned()),
         chat_id: ActiveValue::set(chat_id.clone()),
         ..Default::default()
     };
@@ -105,7 +105,7 @@ pub async fn send_chats(token: &str, messages: ChatData, conn: &DatabaseConnecti
     let insert_participant = participants::ActiveModel {
         id: ActiveValue::set(cuid::cuid2_slug()),
         chat_id: ActiveValue::set(chat_id),
-        user_id: ActiveValue::set(messages.receiver_id),
+        user_id: ActiveValue::set(messages.receiver_id.to_owned()),
         ..Default::default()
     };
     insertMessage.insert(conn).await;

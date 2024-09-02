@@ -19,7 +19,7 @@ reqwest = { version = "0.11", features = ["json"] }
 actix-rt = "2.5"
 url = "2.2"
 dotenv = "0.15"
-openssl-sys = "0.9.103"
+
 serde_json = "1.0"
 jsonwebtoken = "8.2"
 chrono = "0.4"
@@ -34,3 +34,4 @@ actix-ws = "0.3.0"
 futures-util = "0.3.30"
 actix = "0.13.5"
 bytes = "1.7.1"
+tokio = "1.40.0"

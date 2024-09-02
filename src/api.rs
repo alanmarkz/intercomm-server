@@ -1,4 +1,4 @@
-use crate::auth::{self, GithubTokenResponse};
+use crate::auth::{self, decode_jwt, GithubTokenResponse};
 use crate::chat::{fetch_messages, send_chats};
 use crate::{chat, messages, AppState};
 use actix_web::http::header;
@@ -96,7 +96,7 @@ async fn github_callback(
                     .insert_header((
                         "Location",
                         format!(
-                            "http://localhost:3000/callback?token={}&expires={}",
+                            "http://192.168.0.109:3000/callback?token={}&expires={}",
                             token.jwt, token.jwt_life
                         ),
                     ))
@@ -222,16 +222,29 @@ pub async fn chat_socket(
         }
         while let Some(msg) = stream.next().await {
             let conn = &data.conn;
+
             match msg {
                 Ok(AggregatedMessage::Text(text)) => {
+                    let mut mystream = data.socket_maps.lock().await;
                     if let Some(auth_cookie) = req.cookie("authToken") {
                         let token = auth_cookie.value();
+
+                        let myId = decode_jwt(token).unwrap();
+
+                        mystream.insert(myId.sub, session.clone());
 
                         let chat_data: ChatData = serde_json::from_str(&text).unwrap();
 
                         if auth::authorize_user(token, conn).await {
-                            send_chats(token, chat_data, conn).await;
+                            send_chats(token, &chat_data, conn).await;
                         }
+
+                        let youstream = mystream.get_key_value(&chat_data.receiver_id).unwrap();
+
+                        match youstream.1.to_owned().text(text).await {
+                            Ok(_) => println!("Sucess"),
+                            Err(e) => println!("Fuckup,{}", e),
+                        };
                     }
                 }
 

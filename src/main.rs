@@ -12,6 +12,7 @@ mod auth;
 
 mod entities;
 use entities::*;
+use tokio::sync::Mutex;
 
 #[main]
 async fn main() -> std::io::Result<()> {
@@ -20,15 +21,19 @@ async fn main() -> std::io::Result<()> {
     let db = Database::connect("sqlite://itercomm-main.db?mode=rwc")
         .await
         .unwrap();
+    let socket_maps = Arc::new(Mutex::new(HashMap::new()));
 
-    let state = AppState { conn: db };
+    let state = AppState {
+        conn: db,
+        socket_maps,
+    };
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(state.clone()))
             .wrap(middleware::Logger::default())
             .wrap(
                 Cors::default()
-                    .allowed_origin("http://localhost:3000")
+                    .allowed_origin("http://192.168.0.109:3000")
                     .allowed_methods(vec!["GET", "POST"])
                     .allowed_headers(vec![
                         http::header::AUTHORIZATION,
@@ -38,7 +43,7 @@ async fn main() -> std::io::Result<()> {
             )
             .configure(init)
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("192.168.0.109", 8080))?
     .run()
     .await?;
     Ok(())
@@ -47,7 +52,6 @@ async fn main() -> std::io::Result<()> {
 fn init(cfg: &mut web::ServiceConfig) {
     cfg.service(api::auth_user);
     cfg.service(api::query_user_data);
-
     cfg.service(api::github_callback);
     cfg.service(api::validate_token);
     cfg.service(api::chat_socket);
@@ -61,4 +65,5 @@ type SessionId = String;
 #[derive(Clone)]
 struct AppState {
     conn: DatabaseConnection,
+    socket_maps: Arc<Mutex<HashMap<String, actix_ws::Session>>>,
 }
